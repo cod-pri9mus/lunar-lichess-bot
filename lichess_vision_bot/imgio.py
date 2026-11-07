@@ -1,7 +1,7 @@
 """Unicode-safe image I/O for Windows paths.
 
 OpenCV's ``imread``/``imwrite`` use the ANSI code page on Windows and fail on
-paths such as ``C:\\Users\\user\\...``.  Reading/writing the encoded buffer
+paths with non-ASCII characters (for example, a Cyrillic user name).  Reading/writing the encoded buffer
 through numpy uses Python's Unicode path handling instead.
 """
 

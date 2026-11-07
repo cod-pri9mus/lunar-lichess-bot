@@ -34,7 +34,7 @@ Verified against Lichess's default board render at 0.93–0.97 classifier confid
 
 1. Зависимости уже стоят в `.venv`. Если начинаете с нуля:
    ```powershell
-   cd C:\Users\user\Documents\chess1
+   cd <project folder>
    .\.venv\Scripts\python.exe -m pip install -r requirements.txt
    ```
 2. Запустите бота:
@@ -65,7 +65,7 @@ Verified against Lichess's default board render at 0.93–0.97 classifier confid
 ## Install
 
 ```powershell
-cd C:\Users\user\Documents\chess1
+cd <project folder>
 
 # the virtual environment is already here; if starting fresh:
 python -m venv .venv
@@ -320,7 +320,7 @@ Debug output:
 ## Project layout
 
 ```
-chess1/
+lunar-lichess-bot/
 ├── run.py                         launcher
 ├── config.example.json            documented defaults
 ├── config.json                    local config (created, gitignored)
