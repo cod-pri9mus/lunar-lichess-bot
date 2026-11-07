@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lichess-vision-bot"
+version = "1.0.0"
+description = "Screen-vision Lichess autoplay bot driven by Stockfish"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "opencv-python>=4.8",
+    "mss>=9.0",
+    "Pillow>=10.0",
+    "pyautogui>=0.9.54",
+    "pynput>=1.7",
+    "chess>=1.10",
+]
+
+[project.scripts]
+lichess-vision-bot = "lichess_vision_bot.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["lichess_vision_bot*"]
+
+[tool.setuptools.package-data]
+lichess_vision_bot = ["assets/cburnett/*.png", "assets/cburnett/library.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

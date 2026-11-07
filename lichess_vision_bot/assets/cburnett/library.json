@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "source": "lichess cburnett SVG",
+  "created": "2026-11-06T18:05:52.203614+00:00",
+  "threshold": 0.6,
+  "samples": [
+    {
+      "piece": "P",
+      "file": "P_000.png"
+    },
+    {
+      "piece": "N",
+      "file": "N_001.png"
+    },
+    {
+      "piece": "B",
+      "file": "B_002.png"
+    },
+    {
+      "piece": "Q",
+      "file": "Q_003.png"
+    },
+    {
+      "piece": "R",
+      "file": "R_004.png"
+    },
+    {
+      "piece": "K",
+      "file": "K_005.png"
+    },
+    {
+      "piece": "p",
+      "file": "p_006.png"
+    },
+    {
+      "piece": "n",
+      "file": "n_007.png"
+    },
+    {
+      "piece": "b",
+      "file": "b_008.png"
+    },
+    {
+      "piece": "q",
+      "file": "q_009.png"
+    },
+    {
+      "piece": "r",
+      "file": "r_010.png"
+    },
+    {
+      "piece": "k",
+      "file": "k_011.png"
+    }
+  ]
+}

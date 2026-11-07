@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest>=8.0
+resvg-py>=0.4
+ruff>=0.6

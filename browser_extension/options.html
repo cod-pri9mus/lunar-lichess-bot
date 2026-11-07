@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Настройки Lunar</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    background: radial-gradient(900px 600px at 15% -10%, #10242c 0%, transparent 55%), #07090c;
+    color: #e8eff7;
+    font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  .card {
+    width: min(480px, calc(100vw - 32px));
+    padding: 24px;
+    border: 1px solid #222d3a;
+    border-radius: 16px;
+    background: linear-gradient(180deg, #131a23, #0f141b);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, .45);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .mark {
+    width: 36px; height: 36px; display: grid; place-items: center;
+    border-radius: 10px; background: linear-gradient(145deg, #48e2c2, #1d8f84);
+    color: #03110e; font-weight: 800; font-size: 18px;
+  }
+  h1 { margin: 0; font-size: 17px; letter-spacing: .14em; }
+  p { margin: 0 0 16px; color: #8b99aa; font-size: 13px; line-height: 1.55; }
+  label { display: block; margin: 14px 0 6px; color: #8b99aa; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; }
+  input {
+    width: 100%; padding: 10px 12px; border: 1px solid #26323f; border-radius: 9px;
+    background: #0a0e13; color: #e8eff7; font: inherit; font-size: 14px;
+  }
+  .row { display: flex; gap: 8px; margin-top: 14px; }
+  button {
+    flex: 1; padding: 10px 12px; border: 1px solid #26323f; border-radius: 9px;
+    background: #0b1016; color: #e8eff7; font: inherit; font-size: 13px; font-weight: 600;
+    cursor: pointer;
+  }
+  button.primary { border-color: #237d70; background: #0c2a26; color: #bff6ea; }
+  button:hover { border-color: #3a4d61; }
+  #status { margin-top: 14px; font-size: 12px; color: #8b99aa; }
+  #status.ok { color: #7ff0d8; }
+  #status.bad { color: #ff9aa3; }
+  a { color: #7ff0d8; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand"><div class="mark">L</div><h1>LUNAR</h1></div>
+    <p>
+      Панель расширения обращается к локальному web-интерфейсу бота.
+      Порт должен совпадать с <code>--web-port</code> (по умолчанию 8765).
+    </p>
+    <label for="port">Порт локальной панели</label>
+    <input id="port" type="number" min="1" max="65535" step="1" value="8765">
+    <div class="row">
+      <button class="primary" id="save">Сохранить и проверить</button>
+      <button id="open">Открыть панель</button>
+    </div>
+    <div id="status">Проверка…</div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

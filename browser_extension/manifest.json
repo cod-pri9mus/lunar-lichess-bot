@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Lunar — панель Lichess-бота",
+  "version": "1.0.0",
+  "description": "Плавающая панель статуса локального Lichess-бота прямо на lichess.org.",
+  "permissions": ["storage"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://lichess.org/*", "https://*.lichess.org/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "engine": {
+    "path": "stockfish.exe",
+    "threads": 2,
+    "hash_mb": 256,
+    "skill_level": 20,
+    "uci_elo": null,
+    "move_time_s": 0.6,
+    "depth": null,
+    "move_overhead_ms": 100
+  },
+  "vision": {
+    "monitor": 1,
+    "board_rect": null,
+    "ignore_window_title": "Lichess Bot",
+    "orientation": "auto",
+    "color": "auto",
+    "capture_fps": 15.0,
+    "stable_reads": 2,
+    "confidence_threshold": 0.60,
+    "cell_crop_pct": 6.0,
+    "board_inset_pct": 1.0,
+    "redetect_interval_s": 15.0,
+    "templates_dir": "templates",
+    "auto_save_templates": true,
+    "debug_dir": "debug",
+    "save_debug_frames": false
+  },
+  "input": {
+    "enabled": true,
+    "mode": "drag",
+    "human_like": true,
+    "move_duration_s": [0.08, 0.16],
+    "jitter_pct": 9.0,
+    "down_pause_s": [0.03, 0.06],
+    "up_pause_s": [0.02, 0.04],
+    "post_move_wait_s": 0.20,
+    "confirm_timeout_s": 2.0,
+    "max_move_retries": 3,
+    "promotion_mode": "auto",
+    "promotion_wait_s": 0.9,
+    "focus_window": null,
+    "park_outside": true
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "logs/bot.log",
+    "max_bytes": 5000000,
+    "backup_count": 5
+  }
+}
