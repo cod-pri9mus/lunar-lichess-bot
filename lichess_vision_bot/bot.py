@@ -203,6 +203,7 @@ class VisionBot:
             "skill_level": self.config.engine.skill_level,
             "uci_elo": self.config.engine.uci_elo,
             "monitor": self.config.vision.monitor,
+            "source": self.config.vision.source,
             "board_rect": self.config.vision.board_rect,
             "templates": self._library_source,
             "hotkeys": "F8 пауза · F7 скан · F9 стоп",
@@ -330,6 +331,13 @@ class VisionBot:
 
             self._web_state.update(paused=self._paused.is_set())
 
+            if self.config.vision.source == "dom":
+                self._loop_dom()
+                elapsed = time.perf_counter() - started
+                if elapsed < interval:
+                    time.sleep(interval - elapsed)
+                continue
+
             try:
                 frame = self._capture.grab()
             except CaptureError as exc:
@@ -452,6 +460,172 @@ class VisionBot:
         return self._geometry
 
     # ----------------------------------------------------------------- logic
+
+    def _loop_dom(self) -> None:
+        """Read the board from the browser extension instead of the screen."""
+        dom = self._web_state.dom()
+        if dom is None:
+            self._web_state.update(
+                status="waiting",
+                message="Ожидание позиции из расширения…",
+            )
+            self._log_throttled("dom", "waiting for the browser extension to send the board")
+            return
+        age = time.time() - float(dom.get("at", 0.0))
+        if age > 4.0:
+            self._web_state.update(
+                status="waiting",
+                message="Расширение не присылает доску — открой вкладку Lichess",
+            )
+            self._log_throttled("dom-stale", "DOM feed is stale; is the Lichess tab open?")
+            return
+        payload = dom.get("payload")
+        if isinstance(payload, dict):
+            self._handle_dom(payload)
+
+    def _geometry_from_dom(self, payload: dict) -> Optional[BoardGeometry]:
+        rect = payload.get("rect")
+        if not isinstance(rect, dict):
+            return None
+        try:
+            x = int(round(float(rect["x"])))
+            y = int(round(float(rect["y"])))
+            width = int(round(float(rect["width"])))
+            height = int(round(float(rect["height"])))
+        except (KeyError, TypeError, ValueError):
+            return None
+        if width < 80 or height < 80:
+            return None
+        self._geometry = geometry_from_rect(
+            (x, y, width, height),
+            (0, 0),
+            relative=False,
+            inset_pct=self.config.vision.board_inset_pct,
+        )
+        return self._geometry
+
+    def _start_from_dom(
+        self,
+        board: chess.Board,
+        orientation: chess.Color,
+        geometry: BoardGeometry,
+        payload: dict,
+    ) -> None:
+        our = _parse_color(str(payload.get("color", "")).strip().lower()) or orientation
+        self._our_color = our
+        self._forced_color = our
+        self._orientation = orientation
+        self._orientation_locked = True
+        self._startup_board = None
+        self._fen_verified = True
+        self._geometry = geometry
+        message = f"DOM: старт, играем за {_color_name(our)}"
+        if not self._adopt_board(board, board.turn, message):
+            self._web_state.update(message="DOM: позиция не является легальной")
+            return
+        self._web_state.increment("games")
+        log.info(
+            "DOM start: %s; bottom=%s, our=%s",
+            board.fen(),
+            _color_name(orientation),
+            _color_name(our),
+        )
+
+    def _handle_dom(self, payload: dict) -> None:
+        fen = payload.get("fen")
+        if not isinstance(fen, str) or not fen.strip():
+            return
+        try:
+            board = chess.Board(fen)
+        except ValueError:
+            self._log_throttled("dom-fen", "DOM: invalid FEN")
+            return
+
+        turn = _parse_color(str(payload.get("turn", "")).strip().lower())
+        if turn is not None:
+            board.turn = turn
+        orientation = _parse_color(str(payload.get("orientation", "")).strip().lower())
+        self._log_throttled(
+            "dom-payload",
+            f"DOM payload: {board.fen()} turn={payload.get('turn')} "
+            f"color={payload.get('color')} orientation={payload.get('orientation')}",
+        )
+        if orientation is not None:
+            self._orientation = orientation
+        else:
+            orientation = self._our_color or chess.WHITE
+
+        geometry = self._geometry_from_dom(payload)
+        if geometry is None:
+            self._log_throttled("dom-rect", "DOM: no board rectangle yet")
+            return
+
+        if self._tracker is None:
+            self._start_from_dom(board, orientation, geometry, payload)
+            return
+
+        if self._resync_requested:
+            self._resync_requested = False
+            self._adopt_board(board, board.turn, "DOM: синхронизация")
+            return
+
+        reading = BoardReading(board.board_fen(), board, True, 0, 1.0)
+        self._web_state.update(
+            status="stalled" if self._stalled else "playing",
+            fen=board.fen(),
+            ascii=str(board),
+            turn=_color_name(self._tracker.board.turn),
+            our_color=_color_name(self._our_color),
+            confidence=1.0,
+            moves=len(self._tracker.board.move_stack),
+            pending=self._pending is not None,
+            last_move=payload.get("last_move") or None,
+        )
+
+        if (
+            reading.placement == START_BOARD_FEN
+            and self._tracker.placement() != START_BOARD_FEN
+        ):
+            log.info("DOM: starting position detected; beginning a new game")
+            self._start_from_dom(board, orientation, geometry, payload)
+            return
+
+        if self._pending is not None:
+            self._handle_pending(reading, True)
+            return
+        if self._stalled:
+            return
+
+        if self._tracker.placement_matches(reading.board):
+            if self._tracker.our_turn() and not self._paused.is_set():
+                self._play(reading, geometry)
+            return
+
+        if self._tracker.rewind_to(reading.placement):
+            log.info("DOM: takeback detected; rewound the tracker")
+            self._mismatch = 0
+            return
+
+        if self._tracker.our_turn():
+            self._mismatch_event(reading, "DOM: доска изменилась на нашем ходу")
+            return
+
+        move = self._tracker.infer_move(reading.board, tolerance=0)
+        if move is not None:
+            try:
+                self._tracker.push(move)
+            except TrackerError as exc:
+                self._mismatch_event(reading, f"DOM: {exc}")
+                return
+            log.info("opponent played %s (DOM)", move.uci())
+            self._web_state.update(
+                last_move=move.uci(),
+                message=f"Соперник: {move.uci()}",
+                moves=len(self._tracker.board.move_stack),
+            )
+            self._mismatch = 0
+            return
+        self._mismatch_event(reading, "DOM: позиция недостижима")
 
     def _handle(
         self,
@@ -785,7 +959,11 @@ class VisionBot:
         )
         expected = self._tracker.board.piece_at(move.from_square)
         observed = reading.board.piece_at(move.from_square)
-        if expected != observed:
+        checked_king = (
+            self._tracker.board.is_check()
+            and move.from_square == self._tracker.board.king(self._tracker.board.turn)
+        )
+        if expected != observed and not checked_king:
             log.warning(
                 "move %s source mismatch: expected %s, observed %s; resyncing",
                 move.uci(),
@@ -1107,6 +1285,9 @@ class VisionBot:
     def _start_from_current(
         self, color: str, flipped: bool = False, my_turn: bool = True
     ) -> None:
+        if self.config.vision.source == "dom":
+            self._start_from_current_dom(color, flipped, my_turn)
+            return
         selected = chess.WHITE if color == "white" else chess.BLACK
         try:
             frame = self._capture.grab()
@@ -1172,6 +1353,54 @@ class VisionBot:
         self._web_state.update(paused=self._paused.is_set())
         log.info(
             "panel current-position start: we play %s, bottom %s, %s to move",
+            _color_name(our),
+            _color_name(orientation),
+            _color_name(turn),
+        )
+
+    def _start_from_current_dom(
+        self, color: str, flipped: bool = False, my_turn: bool = True
+    ) -> None:
+        dom = self._web_state.dom()
+        if dom is None:
+            self._web_state.update(message="DOM: расширение ещё не прислало позицию")
+            return
+        payload = dom.get("payload") or {}
+        fen = payload.get("fen")
+        if not isinstance(fen, str) or not fen.strip():
+            self._web_state.update(message="DOM: пустая позиция")
+            return
+        try:
+            board = chess.Board(fen)
+        except ValueError as exc:
+            self._web_state.update(message=f"DOM: неверный FEN: {exc}")
+            return
+        if board.king(chess.WHITE) is None or board.king(chess.BLACK) is None:
+            self._web_state.update(message="DOM: FEN без одного из королей")
+            return
+        our = chess.WHITE if color == "white" else chess.BLACK
+        orientation = _parse_color(str(payload.get("orientation", "")).strip().lower())
+        if orientation is None:
+            orientation = (not our) if flipped else our
+        turn = our if my_turn else (not our)
+        geometry = self._geometry_from_dom(payload)
+        if geometry is None:
+            self._web_state.update(message="DOM: нет координат доски")
+            return
+        self._our_color = our
+        self._forced_color = our
+        self._orientation = orientation
+        self._orientation_locked = True
+        self._startup_board = None
+        self._fen_verified = True
+        self._geometry = geometry
+        if not self._adopt_board(board, turn, "DOM: старт с текущей позиции"):
+            self._web_state.update(message="DOM: позиция не является легальной")
+            return
+        self._web_state.increment("games")
+        self._web_state.update(paused=self._paused.is_set())
+        log.info(
+            "DOM current start: we play %s, bottom %s, %s to move",
             _color_name(our),
             _color_name(orientation),
             _color_name(turn),
@@ -1434,6 +1663,8 @@ class VisionBot:
         )
 
     def _dump_debug(self, reason: str) -> None:
+        if self.config.vision.source == "dom":
+            return
         if self._geometry is None:
             return
         try:

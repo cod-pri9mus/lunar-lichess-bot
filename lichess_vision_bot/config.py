@@ -30,6 +30,7 @@ class VisionConfig:
     monitor: int = 1
     board_rect: Optional[tuple[int, int, int, int]] = None
     ignore_window_title: Optional[str] = "Lichess Bot"
+    source: str = "dom"                # dom | screen : board source
     orientation: str = "auto"          # auto | white | black : colour at the bottom
     color: str = "auto"                # auto | white | black : the side we play
     capture_fps: float = 12.0
@@ -129,6 +130,7 @@ def _validate(config: BotConfig) -> None:
     v = config.vision
     i = config.input
     _validate_choice(v.orientation, ("auto", "white", "black"), "vision.orientation")
+    _validate_choice(v.source, ("dom", "screen"), "vision.source")
     _validate_choice(v.color, ("auto", "white", "black"), "vision.color")
     _validate_range(v.capture_fps, 1.0, 30.0, "vision.capture_fps")
     _validate_range(v.confidence_threshold, 0.30, 0.99, "vision.confidence_threshold")

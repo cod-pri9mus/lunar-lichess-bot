@@ -1,6 +1,6 @@
 # Lichess Vision Bot
 
-A fully automatic Lichess player that reads the board from the screen with computer vision, feeds the position to Stockfish, and plays the move with human-like mouse input. No Lichess API token and no bot flag — it drives the normal web client on a normal account. A small optional Chrome/Edge extension adds a live status panel directly on `lichess.org`.
+A fully automatic Lichess player. By default it reads the board from the Lichess DOM through the bundled Chrome/Edge extension, feeds the position to Stockfish, and plays the move with human-like mouse input. The screen-vision reader remains as a fallback (`vision.source: "screen"`). No Lichess API token and no bot flag — it drives the normal web client on a normal account.
 
 ```
 screen ──▶ board detection ──▶ 64 cells ──▶ piece classifier ──▶ placement
@@ -18,7 +18,8 @@ screen ──▶ board detection ──▶ 64 cells ──▶ piece classifier �
 
 ## What it does
 
-- Finds the chessboard anywhere on the screen and perspective-warps it to a square.
+- Reads the position from the Lichess DOM (default) through the extension: no screen scanning, and the local panel renders a simulation of the board instead of a screen frame.
+- Finds the chessboard anywhere on the screen (fallback mode) and perspective-warps it to a square.
 - Classifies all 64 squares from background-normalised piece templates.
 - Tracks the game legally: side to move, castling rights, en passant, promotions, takebacks.
 - Uses Stockfish (UCI) for the move.
@@ -42,17 +43,19 @@ Verified against Lichess's default board render at 0.93–0.97 classifier confid
    .\.venv\Scripts\python.exe run.py
    ```
    Локальная панель: **http://127.0.0.1:8765/** (откроется в браузере).
-3. Чтобы панель была **на самом lichess.org** (видна ещё в меню, до партии):
+3. Загрузите расширение — оно присылает боту позицию из HTML:
    - `chrome://extensions` (или `edge://extensions`);
    - включите **Режим разработчика**;
    - **Загрузить распакованное** → выберите папку `browser_extension`;
    - обновите вкладку Lichess.
    В правом нижнем углу появится плавающая панель **LUNAR**.
-4. Откройте партию. Бот ждёт стартовую позицию и играет за цвет внизу.
-   Если бот запущен посреди партии — передайте `--fen` и `--color`.
+4. Откройте партию. Расширение присылает FEN и координаты доски, бот стартует
+   автоматически с текущей позиции. Панель рисует симуляцию; экран не сканируется.
 
-Вкладка Lichess должна быть активной, а доска — не перекрыта (панель можно
-свернуть в маленькую пилюлю). `F8` — пауза, `F7` — пересканировать, `F9` — стоп.
+Вкладка Lichess должна быть открыта, расширение — загружено. Доска может быть
+перекрыта: в DOM-режиме экран не сканируется. `F8` — пауза, `F7` — пересканировать,
+`F9` — стоп. Старый режим машинного зрения включается через `"source": "screen"`
+в `config.json`.
 
 ## Requirements
 
@@ -193,6 +196,7 @@ The bot controls the mouse. Do not use the mouse while it is moving; press `F8` 
 | `vision.board_rect` | null | `[x, y, width, height]` in physical screen pixels; skips auto-detection |
 | `vision.ignore_window_title` | `Lichess Bot` | exclude this window (the local panel) from board detection |
 | `vision.orientation` | auto | colour at the bottom: `auto`, `white`, `black` |
+| `vision.source` | `dom` | `dom` = read the Lichess DOM via the extension; `screen` = the old computer vision |
 | `vision.color` | auto | side the bot plays; defaults to the bottom colour |
 | `vision.capture_fps` | 15 | screen sampling rate |
 | `vision.stable_reads` | 2 | identical frames required before acting |

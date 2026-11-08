@@ -18,7 +18,7 @@ from synthetic import render_board
 
 def _config(tmp_path):
     path = tmp_path / "config.json"
-    path.write_text("{}", encoding="utf-8")
+    path.write_text('{"vision": {"source": "screen"}}', encoding="utf-8")
     return path
 
 
@@ -77,6 +77,23 @@ def test_start_tracker_clears_the_finished_state(bot):
     assert bot._finished is False
     assert bot._recover_at == 0.0
     assert bot._tracker is not None
+
+
+def test_dom_start_adopts_the_board(bot):
+    payload = {
+        "fen": "4k3/8/8/8/8/8/8/4K3 b - - 0 1",
+        "turn": "black",
+        "orientation": "black",
+        "color": "black",
+        "rect": {"x": 0, "y": 0, "width": 640, "height": 640},
+    }
+
+    bot._handle_dom(payload)
+
+    assert bot._tracker is not None
+    assert bot._tracker.board.board_fen() == "4k3/8/8/8/8/8/8/4K3"
+    assert bot._our_color == chess.BLACK
+    assert bot._geometry is not None
 
 
 def test_set_elo_command_updates_engine_and_config(bot):

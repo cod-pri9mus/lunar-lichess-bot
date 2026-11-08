@@ -53,6 +53,8 @@ class BotState:
         }
         self._logs: deque[str] = deque(maxlen=300)
         self._frame: Optional[bytes] = None
+        self._dom: Optional[dict[str, Any]] = None
+        self._dom_at = 0.0
         self._commands: queue.Queue[str] = queue.Queue()
         self._start_requests: queue.Queue[dict[str, Any]] = queue.Queue()
         self._start_current_requests: queue.Queue[dict[str, Any]] = queue.Queue()
@@ -114,6 +116,17 @@ class BotState:
             self._frame = jpeg
             self._data["frame_seq"] = int(self._data.get("frame_seq", 0)) + 1
 
+    def set_dom(self, payload: dict[str, Any]) -> None:
+        with self._lock:
+            self._dom = dict(payload)
+            self._dom_at = time.time()
+
+    def dom(self) -> Optional[dict[str, Any]]:
+        with self._lock:
+            if self._dom is None:
+                return None
+            return {"payload": dict(self._dom), "at": self._dom_at}
+
     def frame(self) -> Optional[bytes]:
         with self._lock:
             return self._frame
@@ -149,7 +162,7 @@ def _origin_allowed(origin: Optional[str], host: str) -> bool:
         return False
     if parts.scheme in ("http", "https") and parts.netloc == host:
         return True
-    if parts.scheme == "chrome-extension":
+    if parts.scheme in ("chrome-extension", "moz-extension"):
         return True
     if parts.scheme == "https" and parts.netloc in ("lichess.org", "www.lichess.org"):
         return True
@@ -221,6 +234,34 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         path = urlsplit(self.path).path
+        state: BotState = self.server.state  # type: ignore[attr-defined]
+        if path == "/api/dom":
+            if not _same_origin(self.headers.get("Origin"), self.headers.get("Host", "")):
+                self._send(403, "text/plain; charset=utf-8", b"forbidden origin")
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                length = 0
+            if length > 65536:
+                self._send(413, "text/plain; charset=utf-8", b"too large")
+                return
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                payload = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                self._send(400, "application/json; charset=utf-8", b'{"ok":false,"error":"bad json"}')
+                return
+            if (
+                not isinstance(payload, dict)
+                or not isinstance(payload.get("fen"), str)
+                or not payload["fen"].strip()
+            ):
+                self._send(400, "application/json; charset=utf-8", b'{"ok":false,"error":"invalid dom"}')
+                return
+            state.set_dom(payload)
+            self._send(200, "application/json; charset=utf-8", b'{"ok":true}')
+            return
         if path != "/api/command":
             self._send(404, "text/plain; charset=utf-8", b"not found")
             return
@@ -457,11 +498,27 @@ button.danger{border-color:#5a2a30; background:#230e12; color:#ffc8ce}
 button.danger:hover{background:#301218}
 button:disabled{opacity:.45; cursor:not-allowed}
 .frame{
-  aspect-ratio:1/1; border-radius:12px; overflow:hidden; border:1px solid var(--line);
-  background:#05070a; display:flex; align-items:center; justify-content:center;
+  position:relative; aspect-ratio:1/1; border-radius:12px; overflow:hidden;
+  border:1px solid var(--line); background:#05070a;
 }
-.frame img{width:100%; height:100%; object-fit:contain; display:none}
-.frame-hint{color:var(--muted); font-size:12px; text-align:center; padding:20px}
+.simboard{
+  position:absolute; inset:0; display:grid;
+  grid-template-columns:repeat(8,1fr); grid-template-rows:repeat(8,1fr);
+}
+.simsquare{
+  display:flex; align-items:center; justify-content:center; position:relative;
+  font-size:clamp(16px,3.4vw,40px); line-height:1; user-select:none;
+}
+.simsquare.light{background:#f0d9b5}
+.simsquare.dark{background:#b58863}
+.simsquare.last{box-shadow:inset 0 0 0 3px rgba(72,226,194,.65)}
+.simpiece{position:relative; z-index:1}
+.simpiece.white{color:#fff; text-shadow:0 0 2px #000,0 1px 1px rgba(0,0,0,.8)}
+.simpiece.black{color:#1a1a1a; text-shadow:0 0 2px rgba(255,255,255,.45)}
+.frame-hint{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  color:var(--muted); font-size:12px; text-align:center; padding:20px;
+}
 .fen{display:flex; gap:8px; align-items:center}
 .fen code{
   flex:1; background:#0a0e13; border:1px solid var(--line); border-radius:8px;
@@ -565,8 +622,8 @@ footer{
   <section class="card preview">
     <div class="label">Доска</div>
     <div class="frame">
-      <img id="frame" alt="превью доски">
-      <div class="frame-hint" id="frameHint">Кадр появится, когда бот найдёт доску.</div>
+      <div id="simBoard" class="simboard"></div>
+      <div class="frame-hint" id="frameHint">Ожидание позиции из расширения…</div>
     </div>
   </section>
 
@@ -588,7 +645,7 @@ footer{
 </main>
 
 <footer>
-  Панель локальная. Вкладка Lichess должна быть активной, а доска — не перекрыта.
+  Вкладка Lichess должна быть открыта: позицию присылает расширение, доска в панели — симуляция.
   Клавиши: <b>F8</b> пауза · <b>F7</b> пересканировать · <b>F9</b> стоп.
 </footer>
 
@@ -609,6 +666,7 @@ const CFG_LABELS = {
   skill_level: "Skill Level",
   uci_elo: "Elo",
   monitor: "Монитор",
+  source: "Источник доски",
   board_rect: "Область доски",
   templates: "Шаблоны",
   hotkeys: "Клавиши"
@@ -635,6 +693,50 @@ function setPill(status, paused) {
   pill.className = "pill " + key;
   $("pillText").textContent = paused ? "Пауза" : (STATUS[status] || "Ошибка");
 }
+function renderSim(fen, ourColor, lastMove) {
+  const board = $("simBoard");
+  if (!board) return;
+  const rows = String(fen || "").split(/\s+/)[0].split("/");
+  if (rows.length !== 8) { board.innerHTML = ""; return; }
+  const flipped = ourColor === "black";
+  const glyph = {
+    p: "♟", n: "♞", b: "♝", r: "♜", q: "♛", k: "♚",
+    P: "♙", N: "♘", B: "♗", R: "♖", Q: "♕", K: "♔"
+  };
+  const grid = rows.map(row => {
+    const files = [];
+    for (const ch of row) {
+      if (ch >= "1" && ch <= "8") {
+        for (let i = 0; i < Number(ch); i++) files.push("");
+      } else {
+        files.push(ch);
+      }
+    }
+    return files;
+  });
+  const last = String(lastMove || "");
+  const from = last.slice(0, 2);
+  const to = last.slice(2, 4);
+  const cells = [];
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 8; col++) {
+      const rank = flipped ? row : 7 - row;
+      const file = flipped ? 7 - col : col;
+      const square = String.fromCharCode(97 + file) + (8 - rank);
+      const piece = (grid[rank] && grid[rank][file]) || "";
+      const light = (file + (8 - rank)) % 2 === 0;
+      const classes = ["simsquare", light ? "light" : "dark"];
+      if (square === from || square === to) classes.push("last");
+      const side = piece ? (piece === piece.toUpperCase() ? "white" : "black") : "";
+      cells.push(
+        `<div class="${classes.join(" ")}" data-square="${square}">` +
+        (glyph[piece] ? `<span class="simpiece ${side}">${glyph[piece]}</span>` : "") +
+        "</div>"
+      );
+    }
+  }
+  board.innerHTML = cells.join("");
+}
 function render(s) {
   setPill(s.status, s.paused);
   $("statusText").textContent = s.paused ? "Пауза" : (STATUS[s.status] || s.status || "—");
@@ -655,11 +757,9 @@ function render(s) {
 
   if (s.frame_seq && s.frame_seq !== ui.seq) {
     ui.seq = s.frame_seq;
-    const img = $("frame");
-    img.src = "/api/frame.jpg?v=" + s.frame_seq;
-    img.style.display = "block";
-    $("frameHint").style.display = "none";
   }
+  renderSim(s.fen, s.our_color, s.last_move);
+  $("frameHint").style.display = s.fen ? "none" : "flex";
 
   const logText = (s.log || []).join("\n");
   if (logText !== ui.logText) {
@@ -738,10 +838,6 @@ $("copyFen").addEventListener("click", async () => {
   try { await navigator.clipboard.writeText(text); $("copyFen").textContent = "Скопировано"; }
   catch (_) { $("copyFen").textContent = "Ошибка"; }
   setTimeout(() => { $("copyFen").textContent = "Копировать FEN"; }, 1200);
-});
-$("frame").addEventListener("error", () => {
-  $("frame").style.display = "none";
-  $("frameHint").style.display = "block";
 });
 poll();
 setInterval(poll, 600);

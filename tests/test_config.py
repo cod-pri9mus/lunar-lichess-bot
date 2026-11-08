@@ -60,6 +60,7 @@ def test_logging_path_is_resolved(tmp_path):
 def test_ignore_window_default(tmp_path):
     config = load_config(write_config(tmp_path, {}))
     assert config.vision.ignore_window_title == "Lichess Bot"
+    assert config.vision.source == "dom"
 
 
 def test_promotion_wait_default(tmp_path):

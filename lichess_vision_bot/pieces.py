@@ -334,7 +334,11 @@ def build_start_library(
         samples.append(PieceSample(piece, sig))
         expected[row * 8 + col] = piece
 
-    for col, piece_type in enumerate(BACK_RANK_TYPES):
+    for col in range(8):
+        # On a flipped (black-bottom) board the visual columns run h..a, so the
+        # standard back-rank order is mirrored.  Without this the black king and
+        # queen templates are swapped.
+        piece_type = BACK_RANK_TYPES[col if bottom_color == chess.WHITE else 7 - col]
         add(7, col, chess.Piece(piece_type, bottom_color))
         add(0, col, chess.Piece(piece_type, top_color))
     for col in range(8):

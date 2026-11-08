@@ -58,7 +58,8 @@ def test_http_state_and_html(server):
     with _request(url) as response:
         html = response.read().decode("utf-8")
     assert "LUNAR" in html
-    assert "Панель" in html
+    assert "Вкладка Lichess" in html
+    assert "simBoard" in html
 
 
 def test_http_command(server):
@@ -72,6 +73,46 @@ def test_http_command(server):
     ) as response:
         assert json.load(response)["ok"] is True
     assert state.drain_commands() == ["toggle-pause"]
+
+
+def test_dom_roundtrip():
+    state = BotState()
+    assert state.dom() is None
+    payload = {
+        "fen": "8/8/8/8/8/8/8/K6k w - - 0 1",
+        "turn": "white",
+        "orientation": "white",
+        "color": "white",
+        "rect": {"x": 10, "y": 20, "width": 640, "height": 640},
+    }
+    state.set_dom(payload)
+    dom = state.dom()
+    assert dom is not None
+    assert dom["payload"]["fen"] == payload["fen"]
+    assert dom["payload"]["turn"] == "white"
+    assert dom["at"] > 0
+
+
+def test_http_dom(server):
+    url, state = server
+    payload = {
+        "fen": "8/8/8/8/8/8/8/K6k b - - 0 1",
+        "turn": "black",
+        "orientation": "black",
+        "color": "black",
+        "rect": {"x": 10, "y": 20, "width": 640, "height": 640},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    with _request(
+        url + "api/dom",
+        method="POST",
+        data=body,
+        headers={"Content-Type": "application/json"},
+    ) as response:
+        assert json.load(response)["ok"] is True
+    dom = state.dom()
+    assert dom is not None
+    assert dom["payload"]["turn"] == "black"
 
 
 def test_http_rejects_unknown_command(server):
@@ -100,6 +141,18 @@ def test_cors_allows_lichess_and_extension(server):
         headers={
             "Content-Type": "application/json",
             "Origin": "chrome-extension://abcdefghijklmnop",
+        },
+    ) as response:
+        assert json.load(response)["ok"] is True
+
+    body = json.dumps({"command": "redetect"}).encode("utf-8")
+    with _request(
+        url + "api/command",
+        method="POST",
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "Origin": "moz-extension://abcdefghijklmnop",
         },
     ) as response:
         assert json.load(response)["ok"] is True

@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Lunar — панель Lichess-бота (Firefox)",
+  "version": "2.0.0",
+  "description": "Плавающая панель локального Lichess-бота и передача позиции из DOM на lichess.org.",
+  "permissions": ["storage"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://lichess.org/*", "https://*.lichess.org/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "lunar-lichess-bot@local",
+      "strict_min_version": "109.0"
+    }
+  }
+}
