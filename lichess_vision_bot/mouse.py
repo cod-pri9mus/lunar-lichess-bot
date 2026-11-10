@@ -74,10 +74,6 @@ class MouseController:
             promotion_picker(move)
 
         time.sleep(self._config.post_move_wait_s)
-        # Leave the target square immediately: Lichess draws a hover outline
-        # there, which changes the cell signature and can make the confirmation
-        # read look unstable forever (the "no clean board read" stall).
-        self.park(geometry)
 
     def _jitter(self, point: tuple[int, int], cell_px: float) -> tuple[float, float]:
         jitter = cell_px * self._config.jitter_pct / 100.0

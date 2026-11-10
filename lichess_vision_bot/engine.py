@@ -91,6 +91,10 @@ class StockfishEngine:
         except chess.engine.EngineError as exc:
             log.warning("engine rejected the Elo change: %s", exc)
 
+    def set_move_time(self, seconds: float) -> None:
+        """Change the search time used by the next move."""
+        self._config = replace(self._config, move_time_s=seconds)
+
     def play(self, board: chess.Board) -> SearchResult:
         limit = chess.engine.Limit(time=self._config.move_time_s)
         if self._config.depth is not None:

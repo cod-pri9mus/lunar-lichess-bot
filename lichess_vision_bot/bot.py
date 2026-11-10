@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import threading
 import time
 import webbrowser
@@ -78,6 +79,23 @@ def _color_name(color: Optional[chess.Color]) -> str:
 def _eval_text(result) -> str:
     if result.mate_in is not None:
         return f"mate in {abs(result.mate_in)}"
+    if result.score_cp is not None:
+        return f"{result.score_cp / 100.0:+.2f}"
+    return "?"
+
+
+def _win_probability(result) -> Optional[float]:
+    if result.mate_in is not None:
+        return 100.0 if result.mate_in > 0 else 0.0
+    if result.score_cp is None:
+        return None
+    cp = max(-2000, min(2000, int(result.score_cp)))
+    return 100.0 / (1.0 + math.exp(-0.00368208 * cp))
+
+
+def _advantage_text(result) -> str:
+    if result.mate_in is not None:
+        return f"мат {abs(result.mate_in)}"
     if result.score_cp is not None:
         return f"{result.score_cp / 100.0:+.2f}"
     return "?"
@@ -874,6 +892,8 @@ class VisionBot:
             message=f"Играем за {_color_name(self._our_color)}",
             last_move=None,
             eval=None,
+            win_prob=None,
+            advantage=None,
             fen=None,
             ascii=None,
             pending=False,
@@ -905,6 +925,8 @@ class VisionBot:
                 message=f"Подсказка: {result.move.uci()} ({_eval_text(result)})",
                 last_move=result.move.uci(),
                 eval=_eval_text(result),
+                win_prob=_win_probability(result),
+                advantage=_advantage_text(result),
                 pending=False,
             )
             if self.once:
@@ -956,6 +978,8 @@ class VisionBot:
             message=f"Ход: {move.uci()} ({_eval_text(result)})",
             last_move=move.uci(),
             eval=_eval_text(result),
+            win_prob=_win_probability(result),
+            advantage=_advantage_text(result),
         )
         expected = self._tracker.board.piece_at(move.from_square)
         observed = reading.board.piece_at(move.from_square)
@@ -1020,8 +1044,6 @@ class VisionBot:
             self._pending = None
             self._mismatch = 0
             self._retry = 0
-            if self._mouse is not None and self._geometry is not None:
-                self._mouse.park(self._geometry)
             if self._stop_after_confirm:
                 self._stop.set()
             return
@@ -1190,6 +1212,9 @@ class VisionBot:
             turn=_color_name(board.turn),
             our_color=_color_name(self._our_color),
             pending=False,
+            eval=None,
+            win_prob=None,
+            advantage=None,
         )
         return True
 
@@ -1275,6 +1300,8 @@ class VisionBot:
             message="FEN принят, сверяю доску…",
             last_move=None,
             eval=None,
+            win_prob=None,
+            advantage=None,
             fen=board.fen(),
             ascii=str(board),
             pending=False,
@@ -1426,6 +1453,25 @@ class VisionBot:
                 message=f"Elo: {elo}",
             )
             log.info("web: elo=%d", elo)
+            return
+        if command.startswith("set-move-time:"):
+            try:
+                seconds = float(command.split(":", 1)[1])
+            except ValueError:
+                return
+            if not (0.05 <= seconds <= 10.0):
+                return
+            if self._engine is not None:
+                self._engine.set_move_time(seconds)
+            self.config = replace(
+                self.config,
+                engine=replace(self.config.engine, move_time_s=seconds),
+            )
+            self._web_state.update(
+                config=self._config_summary(),
+                message=f"Время хода: {seconds:.1f} с",
+            )
+            log.info("web: move_time_s=%.2f", seconds)
             return
         if command == "stop":
             self._stop.set()
@@ -1638,7 +1684,11 @@ class VisionBot:
             pending=False,
         )
         log.error("STALLED: %s (auto-recovery in 2.5 s; F7 now, F9 stop)", reason)
-        if self._mouse is not None and self._geometry is not None:
+        if (
+            self.config.vision.source == "screen"
+            and self._mouse is not None
+            and self._geometry is not None
+        ):
             self._mouse.park(self._geometry)
         self._dump_debug("stall")
 

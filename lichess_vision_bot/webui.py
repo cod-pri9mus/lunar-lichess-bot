@@ -39,6 +39,8 @@ class BotState:
             "turn": None,
             "last_move": None,
             "eval": None,
+            "win_prob": None,
+            "advantage": None,
             "confidence": None,
             "fen": None,
             "ascii": None,
@@ -328,6 +330,22 @@ class _Handler(BaseHTTPRequestHandler):
             state.command(f"set-elo:{elo}")
             self._send(200, "application/json; charset=utf-8", b'{"ok":true}')
             return
+        if command == "set-move-time":
+            seconds = payload.get("seconds") if isinstance(payload, dict) else None
+            if (
+                not isinstance(seconds, (int, float))
+                or isinstance(seconds, bool)
+                or not (0.05 <= float(seconds) <= 10.0)
+            ):
+                self._send(
+                    400,
+                    "application/json; charset=utf-8",
+                    b'{"ok":false,"error":"invalid move time"}',
+                )
+                return
+            state.command(f"set-move-time:{float(seconds):g}")
+            self._send(200, "application/json; charset=utf-8", b'{"ok":true}')
+            return
         if command not in COMMANDS:
             self._send(400, "application/json; charset=utf-8", b'{"ok":false,"error":"unknown command"}')
             return
@@ -597,6 +615,18 @@ footer{
       </div>
     </div>
     <div class="startbox">
+      <div class="startlabel">Время хода</div>
+      <div class="startrow">
+        <select id="moveTimeSelect">
+          <option value="0.1">0.1 с</option>
+          <option value="0.3">0.3 с</option>
+          <option value="0.6">0.6 с</option>
+          <option value="1.0">1.0 с</option>
+        </select>
+        <span class="check">Думает Stockfish, меняется на лету</span>
+      </div>
+    </div>
+    <div class="startbox">
       <div class="startlabel">Старт с середины</div>
       <input id="fenInput" type="text" autocomplete="off" spellcheck="false"
              placeholder="Вставьте FEN из Lichess → Share → FEN">
@@ -754,6 +784,10 @@ function render(s) {
   $("ascii").textContent = s.ascii || "—";
   const elo = s.config && s.config.uci_elo != null ? String(s.config.uci_elo) : "3190";
   if ($("eloSelect").value !== elo) $("eloSelect").value = elo;
+  const moveTime = s.config && s.config.move_time_s != null
+    ? Number(s.config.move_time_s).toFixed(1)
+    : "0.6";
+  if ($("moveTimeSelect").value !== moveTime) $("moveTimeSelect").value = moveTime;
 
   if (s.frame_seq && s.frame_seq !== ui.seq) {
     ui.seq = s.frame_seq;
@@ -831,6 +865,9 @@ $("currentStart").addEventListener("click", () => {
 });
 $("eloSelect").addEventListener("change", () => {
   command("set-elo", { elo: Number($("eloSelect").value) });
+});
+$("moveTimeSelect").addEventListener("change", () => {
+  command("set-move-time", { seconds: Number($("moveTimeSelect").value) });
 });
 $("copyFen").addEventListener("click", async () => {
   const text = $("fen").textContent;

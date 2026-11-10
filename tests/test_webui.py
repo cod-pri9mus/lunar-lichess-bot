@@ -115,6 +115,19 @@ def test_http_dom(server):
     assert dom["payload"]["turn"] == "black"
 
 
+def test_http_move_time(server):
+    url, state = server
+    body = json.dumps({"command": "set-move-time", "seconds": 0.3}).encode("utf-8")
+    with _request(
+        url + "api/command",
+        method="POST",
+        data=body,
+        headers={"Content-Type": "application/json"},
+    ) as response:
+        assert json.load(response)["ok"] is True
+    assert state.drain_commands() == ["set-move-time:0.3"]
+
+
 def test_http_rejects_unknown_command(server):
     url, _state = server
     body = json.dumps({"command": "shutdown-machine"}).encode("utf-8")

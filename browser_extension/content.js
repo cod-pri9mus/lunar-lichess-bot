@@ -199,6 +199,8 @@
           <div class="lunar-grid">
             <div><span>Ход</span><b id="lunar-turn">—</b></div>
             <div><span>Цвет</span><b id="lunar-color">—</b></div>
+            <div><span>Шанс</span><b id="lunar-win">—</b></div>
+            <div><span>Перевес</span><b id="lunar-adv">—</b></div>
             <div><span>Ходы</span><b id="lunar-moves">0</b></div>
             <div><span>Игры</span><b id="lunar-games">0</b></div>
           </div>
@@ -239,6 +241,8 @@
       $("lunar-message").textContent = "Запустите run.py или проверьте порт в настройках расширения.";
       $("lunar-turn").textContent = "—";
       $("lunar-color").textContent = "—";
+      $("lunar-win").textContent = "—";
+      $("lunar-adv").textContent = "—";
       $("lunar-moves").textContent = "0";
       $("lunar-games").textContent = "0";
       pause.disabled = true;
@@ -257,6 +261,10 @@
         ? (state.turn === state.our_color ? "ваш ход" : "ход соперника")
         : "—";
       $("lunar-color").textContent = colorName(state.our_color);
+      $("lunar-win").textContent = state.win_prob == null
+        ? "—"
+        : `${Math.round(state.win_prob)}%`;
+      $("lunar-adv").textContent = state.advantage || "—";
       $("lunar-moves").textContent = state.moves ?? 0;
       $("lunar-games").textContent = state.games ?? 0;
       pause.textContent = paused ? "Продолжить" : "Пауза";

@@ -8,7 +8,7 @@ import chess
 import numpy as np
 import pytest
 
-from lichess_vision_bot.bot import VisionBot
+from lichess_vision_bot.bot import VisionBot, _advantage_text, _win_probability
 from lichess_vision_bot.config import load_config
 from lichess_vision_bot.imgio import imwrite
 from lichess_vision_bot.tracker import GameTracker
@@ -104,6 +104,24 @@ def test_set_elo_command_updates_engine_and_config(bot):
     bot._engine.set_elo.assert_called_once_with(2000)
     assert bot.config.engine.uci_elo == 2000
     assert bot._web_state.snapshot()["config"]["uci_elo"] == 2000
+
+
+def test_set_move_time_command_updates_engine_and_config(bot):
+    bot._engine = MagicMock()
+
+    bot._handle_command("set-move-time:0.3")
+
+    bot._engine.set_move_time.assert_called_once_with(0.3)
+    assert bot.config.engine.move_time_s == 0.3
+    assert bot._web_state.snapshot()["config"]["move_time_s"] == 0.3
+
+
+def test_win_probability_and_advantage():
+    assert _advantage_text(SimpleNamespace(mate_in=None, score_cp=102)) == "+1.02"
+    assert _advantage_text(SimpleNamespace(mate_in=3, score_cp=None)) == "мат 3"
+    assert _win_probability(SimpleNamespace(mate_in=None, score_cp=0)) == 50.0
+    assert _win_probability(SimpleNamespace(mate_in=3, score_cp=None)) == 100.0
+    assert _win_probability(SimpleNamespace(mate_in=-2, score_cp=None)) == 0.0
 
 
 def test_start_from_current_reads_the_board_and_the_clock(tmp_path):
