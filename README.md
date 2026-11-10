@@ -1,35 +1,31 @@
-# Lichess Vision Bot
+# Lunar — Lichess Bot
 
-A fully automatic Lichess player. By default it reads the board from the Lichess DOM through the bundled Chrome/Edge extension, feeds the position to Stockfish, and plays the move with human-like mouse input. The screen-vision reader remains as a fallback (`vision.source: "screen"`). No Lichess API token and no bot flag — it drives the normal web client on a normal account.
+A fully automatic Lichess player. The main mode reads the position from the Lichess DOM through the bundled browser extension: the extension sends the FEN, the side to move, the board rectangle, and the last move; the bot tracks the game with `python-chess`, asks Stockfish, and plays the move with human-like mouse input. No Lichess API token and no bot flag — it drives the normal web client on a normal account.
+
+The screen-vision reader is kept as a fallback (`vision.source: "screen"`) and is documented at the bottom of this file.
+
+## How it works (DOM mode)
 
 ```
-screen ──▶ board detection ──▶ 64 cells ──▶ piece classifier ──▶ placement
-                                                                   │
-                                                            legal-move tracker
-                                                                   │
-                                                              chess.Board
-                                                                   │
-                                                               Stockfish
-                                                                   │
-             human-like drag ◀── screen coordinates ◀── UCI move ◀──┘
-                     │
-              re-read board ──▶ confirm / retry
+Lichess tab (DOM)
+  cg-board: pieces, orientation, clock, last move, board rectangle
+        │  extension: POST /api/dom
+        ▼
+ FEN + rect ──▶ chess.Board tracker ──▶ Stockfish ──▶ UCI move
+        │                                                │
+        └── panel simulation ◀── state ◀─────────────────┘
+                                    │
+                       human-like drag (screen rect)
 ```
 
-## What it does
-
-- Reads the position from the Lichess DOM (default) through the extension: no screen scanning, and the local panel renders a simulation of the board instead of a screen frame.
-- Finds the chessboard anywhere on the screen (fallback mode) and perspective-warps it to a square.
-- Classifies all 64 squares from background-normalised piece templates.
-- Tracks the game legally: side to move, castling rights, en passant, promotions, takebacks.
-- Uses Stockfish (UCI) for the move.
-- Drags the piece with a randomised Bézier path and confirms the move by reading the board again.
-- Auto-calibrates its piece templates from the starting position, so any piece set and board theme works.
-- Continues across games: when the starting position appears again, it resets and plays the next game.
-- Runs dry, prints the board and suggested move, and never touches the mouse (`--dry-run`).
-- Serves a local browser dashboard and, with the optional extension, shows a floating **LUNAR** panel on Lichess itself before the game starts.
-
-Verified against Lichess's default board render at 0.93–0.97 classifier confidence with all 32 pieces recognised.
+- The extension reads the `cg-board` pieces (classes + `translate` positions), the board orientation, the active clock, the last move, and the board rectangle in physical screen pixels.
+- It posts `{fen, turn, orientation, color, rect, last_move}` to `http://127.0.0.1:8765/api/dom`.
+- The bot adopts the current position on the first payload, including a mid-game start. It does not need a starting position or a screenshot.
+- The local panel draws the board from the FEN as a simulation. The Lichess board may be covered or off-screen; it is not scanned.
+- The tracker handles castling, en passant, promotions, takebacks, and a new game from the starting position.
+- Stockfish returns a UCI move; the bot maps it through the board rectangle to screen coordinates and drags the piece. The cursor stays on the target square after the move.
+- The panel has a **move-time selector** (0.1 / 0.3 / 0.6 / 1.0 s) and the **LUNAR** widget shows the win chance and the point advantage.
+- The extension is a thin client: the bot must be running.
 
 ## Быстрый старт (RU)
 
@@ -44,26 +40,21 @@ Verified against Lichess's default board render at 0.93–0.97 classifier confid
    ```
    Локальная панель: **http://127.0.0.1:8765/** (откроется в браузере).
 3. Загрузите расширение — оно присылает боту позицию из HTML:
-   - `chrome://extensions` (или `edge://extensions`);
-   - включите **Режим разработчика**;
-   - **Загрузить распакованное** → выберите папку `browser_extension`;
-   - обновите вкладку Lichess.
+   - **Chrome / Edge:** `chrome://extensions` (или `edge://extensions`) → включите **Режим разработчика** → **Загрузить распакованное** → папка `browser_extension`;
+   - **Firefox:** `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on…** → `browser_extension/firefox/manifest.json`;
+   - обновите вкладку Lichess. Временное Firefox-расширение живёт до перезапуска Firefox; после перезапуска загрузите его снова.
    В правом нижнем углу появится плавающая панель **LUNAR**.
-4. Откройте партию. Расширение присылает FEN и координаты доски, бот стартует
-   автоматически с текущей позиции. Панель рисует симуляцию; экран не сканируется.
+4. Откройте партию. Расширение присылает FEN и координаты доски, бот стартует автоматически с текущей позиции. Панель рисует симуляцию; экран не сканируется.
 
-Вкладка Lichess должна быть открыта, расширение — загружено. Доска может быть
-перекрыта: в DOM-режиме экран не сканируется. `F8` — пауза, `F7` — пересканировать,
-`F9` — стоп. Старый режим машинного зрения включается через `"source": "screen"`
-в `config.json`.
+Вкладка Lichess должна быть открыта, расширение — загружено. Доска может быть перекрыта: в DOM-режиме экран не сканируется. `F8` — пауза, `F7` — пересканировать, `F9` — стоп.
 
 ## Requirements
 
-- Windows 10/11 (screen capture and DPI handling are Windows-first; the vision code itself is portable).
+- Windows 10/11 (the vision fallback is Windows-first; the DOM mode itself is portable).
 - Python 3.10+ (3.13 tested).
 - Stockfish (`stockfish.exe` is included in this project, Stockfish 17.1).
-- A browser with the Lichess game visible and the board unobstructed.
-- Chrome or Edge, only if you want the floating panel on `lichess.org`.
+- A Chromium browser (Chrome/Edge) or Firefox with the extension loaded, and the Lichess game tab open.
+- For the vision fallback only: the board visible, unobstructed, on the same monitor.
 
 ## Install
 
@@ -91,16 +82,16 @@ Expected: `engine: Stockfish 17.1` and `engine self-test passed (mate in one fou
 
 ## Quick start
 
-1. Open your Lichess game in a browser. Make the whole board visible. Do not cover it with windows, arrows, or drawing tools.
-2. Start the bot **before** the first move of the game:
+1. Open your Lichess game in a browser and load the extension.
+2. Start the bot:
 
 ```powershell
 .\.venv\Scripts\python.exe run.py
 ```
 
-On the first frame it finds the board, captures templates from the starting position, works out which colour is at the bottom, and starts playing for that side.
+The first DOM payload starts the game immediately. If the bot is started mid-game, it adopts the current position and the side at the bottom of the board.
 
-If the bot is started mid-game, it waits for a standard starting position. To join immediately, pass the current FEN and your colour:
+The FEN form in the panel also works:
 
 ```powershell
 .\.venv\Scripts\python.exe run.py --fen "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3" --color white
@@ -108,71 +99,38 @@ If the bot is started mid-game, it waits for a standard starting position. To jo
 
 `--fen` must include the full position (side to move, castling, en passant). Copy it from Lichess's **Share → FEN**.
 
-## Браузерная панель
+## Browser panel
 
-Бот поднимает локальный HTTP-сервер (по умолчанию `http://127.0.0.1:8765/`) и
-открывает его в браузере. Панель показывает:
+The bot serves a local HTTP server (default `http://127.0.0.1:8765/`) and opens it in a browser. The panel shows:
 
-- статус: ожидание стартовой позиции, играет, думает, пауза, нужна помощь;
-- живой превью доски с распознанными фигурами и уверенностью;
-- FEN, ASCII-доску, журнал;
-- ход, цвет, последний ход, оценку, число ходов и партий;
-- кнопки **Пауза/Продолжить**, **Пересканировать**, **Калибровать**,
-  **Проверить зрение**, **Стоп**.
+- status: waiting, playing, thinking, paused, stalled;
+- the board simulated from the FEN;
+- FEN, ASCII board, log;
+- move, colour, last move, evaluation, win chance, advantage, number of moves and games;
+- move-time selector **0.1 / 0.3 / 0.6 / 1.0 s**;
+- buttons **Пауза/Продолжить**, **Пересканировать**, **Калибровать**, **Проверить зрение**, **Стоп**.
 
- Флаги:
+Flags:
 
-| Флаг | Действие |
+| Flag | Action |
 |---|---|
-| `--no-web` | не запускать локальную панель |
-| `--web-host` | адрес (по умолчанию `127.0.0.1`) |
-| `--web-port` | порт (по умолчанию `8765`) |
-| `--no-browser` | не открывать панель в браузере |
+| `--no-web` | do not start the local panel |
+| `--web-host` | bind address (default `127.0.0.1`) |
+| `--web-port` | port (default `8765`) |
+| `--no-browser` | do not open the panel in a browser |
 
-**Панель на lichess.org.** Папка `browser_extension/` — расширение Chrome/Edge
-(Manifest V3). Оно показывает плавающую панель **LUNAR** в правом нижнем углу
-на всех страницах Lichess, включая меню до партии. Статус берётся из локального
-API бота; кнопки «Пауза» и «Скан» отправляют команды. Полная панель открывается
-ссылкой «Панель».
+**The LUNAR widget on lichess.org.** The `browser_extension/` folder is a Manifest V3 extension. It shows a floating **LUNAR** panel in the bottom-right corner on all Lichess pages, including the menu before a game. The widget shows status, turn, colour, **win chance**, **point advantage**, moves, and games; the buttons **Пауза** and **Скан** send commands; **Панель** opens the full dashboard.
 
-Установка: `chrome://extensions` → Режим разработчика → Загрузить
-распакованное → `browser_extension`. Если порт изменён, откройте «Параметры
-расширения» и укажите тот же порт.
+Install: `chrome://extensions` → Developer mode → Load unpacked → `browser_extension`. For Firefox use `about:debugging#/runtime/this-firefox` → Load Temporary Add-on → `browser_extension/firefox/manifest.json`.
 
-Расширение — тонкий клиент: сам бот должен быть запущен. Локальная панель и
-расширение работают только на этой машине; сервер слушает `127.0.0.1`.
-
-## First-run checks
-
-Read the board without playing:
-
-```powershell
-.\.venv\Scripts\python.exe run.py --check-vision
-```
-
-It prints the detected orientation, confidence, ASCII board, every square's confidence, and writes an annotated frame to `debug/`. The green quad is the detected board.
-
-Suggest one move without touching the mouse:
-
-```powershell
-.\.venv\Scripts\python.exe run.py --dry-run --once
-```
-
-Calibrate manually (the usual case is auto-calibration, but this helps with a non-default piece set or a mid-game start):
-
-```powershell
-# board must show the standard starting position
-.\.venv\Scripts\python.exe run.py --calibrate
-```
-
-This stores the current piece set/theme in `templates/`. The bot auto-calibrates at the start of every new game anyway, so manual calibration is mainly for starting mid-game with a custom set.
+The extension is a thin client: the bot must be running. The local server listens on `127.0.0.1` only.
 
 ## Controls
 
 | Key | Action |
 |---|---|
 | `F8` | pause / resume |
-| `F7` | re-detect the board and resync the tracker |
+| `F7` | re-detect and resync the tracker |
 | `F9` | stop |
 | `Ctrl+C` (terminal) | stop |
 | mouse to top-left corner | PyAutoGUI failsafe; aborts input |
@@ -189,20 +147,20 @@ The bot controls the mouse. Do not use the mouse while it is moving; press `F8` 
 | `engine.threads` | 2 | Stockfish threads |
 | `engine.hash_mb` | 256 | transposition table MB |
 | `engine.skill_level` | 20 | Stockfish Skill Level 0–20 |
-| `engine.uci_elo` | null | strength limit 1320–3190 (sets `UCI_LimitStrength`) |
-| `engine.move_time_s` | 0.6 | thinking time per move |
+| `engine.uci_elo` | null | strength limit 1320–3190 |
+| `engine.move_time_s` | 0.6 | thinking time per move; the panel selector changes it live |
 | `engine.depth` | null | optional depth cap (time still applies) |
-| `vision.monitor` | 1 | mss monitor index: 1 = primary, 2 = second, … |
-| `vision.board_rect` | null | `[x, y, width, height]` in physical screen pixels; skips auto-detection |
-| `vision.ignore_window_title` | `Lichess Bot` | exclude this window (the local panel) from board detection |
+| `vision.source` | `dom` | `dom` = Lichess DOM via the extension; `screen` = the old computer vision |
+| `vision.monitor` | 1 | mss monitor index (vision fallback) |
+| `vision.board_rect` | null | `[x, y, width, height]` in physical screen pixels (vision fallback) |
+| `vision.ignore_window_title` | `Lichess Bot` | exclude this window from board detection |
 | `vision.orientation` | auto | colour at the bottom: `auto`, `white`, `black` |
-| `vision.source` | `dom` | `dom` = read the Lichess DOM via the extension; `screen` = the old computer vision |
 | `vision.color` | auto | side the bot plays; defaults to the bottom colour |
-| `vision.capture_fps` | 15 | screen sampling rate |
+| `vision.capture_fps` | 15 | screen sampling rate (vision fallback) |
 | `vision.stable_reads` | 2 | identical frames required before acting |
-| `vision.confidence_threshold` | 0.60 | minimum piece score; lower means more risk |
-| `vision.cell_crop_pct` | 6.0 | border crop, removes Lichess coordinate labels |
-| `vision.board_inset_pct` | 1.0 | shrink detected board to avoid its border |
+| `vision.confidence_threshold` | 0.60 | minimum piece score |
+| `vision.cell_crop_pct` | 6.0 | border crop, removes coordinate labels |
+| `vision.board_inset_pct` | 1.0 | shrink the board to avoid its border |
 | `vision.redetect_interval_s` | 15 | re-scan while idle |
 | `vision.templates_dir` | `templates` | calibrated piece templates |
 | `vision.auto_save_templates` | true | save auto-calibration at game start |
@@ -215,30 +173,54 @@ The bot controls the mouse. Do not use the mouse while it is moving; press `F8` 
 | `input.post_move_wait_s` | 0.20 | settle time after a move |
 | `input.confirm_timeout_s` | 2.0 | time allowed for the move to appear |
 | `input.max_move_retries` | 3 | retries when a move does not register |
-| `input.promotion_mode` | auto | `auto` (vision dialog handling), `auto_queen` (Lichess must auto-queen), `dialog` |
-| `input.focus_window` | null | substring of the browser window title; focuses it at startup |
+| `input.promotion_mode` | auto | `auto`, `auto_queen`, `dialog` |
+| `input.focus_window` | null | substring of the browser window title |
 | `logging.file` | `logs/bot.log` | rotating log file |
 
 ### Recommended settings
 
-- **Rapid / classical:** defaults are fine. `move_time_s: 0.6` gives a strong game with fast replies.
-- **Blitz:** `move_time_s: 0.25`, `capture_fps: 15`, `stable_reads: 2`, `post_move_wait_s: 0.15`. Vision and engine latency still make bullet borderline; 3+0 and slower are safer.
+- **Rapid / classical:** defaults are fine.
+- **Blitz:** `move_time_s: 0.3`, `post_move_wait_s: 0.15`. Bullet is borderline.
 - **Weaker play:** `skill_level: 8` or `uci_elo: 1800`.
-- **Non-default piece set:** the automatic start-position calibration handles it. For a mid-game start, run `--calibrate` once on a start position in that set.
-- **Board not found:** set `vision.board_rect`. Use `--check-vision` to save the annotated frame first; the green quad shows the detected area.
+- **Vision fallback:** see the vision section below.
 
-## How it works
+## Machine vision (fallback)
 
-### 1. Board detection
+Set `vision.source: "screen"` to use the original screen reader. It captures the screen, finds the board, classifies the 64 squares from templates, tracks the game, and confirms every move by re-reading the board. The rest of the bot — engine, tracker, mouse, panel, hotkeys — is shared.
+
+To read the board without playing:
+
+```powershell
+.\.venv\Scripts\python.exe run.py --check-vision
+```
+
+It prints the orientation, confidence, ASCII board, every square's confidence, and writes an annotated frame to `debug/`. The green quad is the detected board.
+
+Suggest one move without touching the mouse:
+
+```powershell
+.\.venv\Scripts\python.exe run.py --dry-run --once
+```
+
+Calibrate manually (the usual case is auto-calibration; this helps with a non-default piece set or a mid-game start):
+
+```powershell
+# board must show the standard starting position
+.\.venv\Scripts\python.exe run.py --calibrate
+```
+
+This stores the current piece set/theme in `templates/`. The bot auto-calibrates at the start of every new game anyway.
+
+### Board detection
 
 `find_board` looks for a large square region using two independent methods:
 
 - **Contours + checkerboard score.** Candidate quadrilaterals are warped and split into 8×8 cells. Square colours are sampled from each cell's border; a real board has high contrast between adjacent cells and low contrast between cells two apart. The score is `adjacent_contrast / (two_apart_contrast + 10)`.
-- **Saturation fallback.** The board is usually the largest saturated square on the page. A saturation mask, morphological close, and bounding box give a candidate; the checkerboard score validates it. This is what makes the Lichess light theme detectable even when the board's outer edge is low-contrast.
+- **Saturation fallback.** The board is usually the largest saturated square on the page. A saturation mask, morphological close, and bounding box give a candidate; the checkerboard score validates it.
 
 The winner is warped to 800×800 with a perspective transform. Screen coordinates for mouse input come from the inverse transform.
 
-### 2. Piece recognition
+### Piece recognition
 
 Each cell is cropped (6% border), its background is estimated from the border ring, and a background-subtracted mask isolates the piece. The mask bounding box is resized to 64×64. A template library stores the mask, RGB, and masked mean luminance for each piece.
 
@@ -246,27 +228,17 @@ Classification combines:
 
 - **Mask IoU** (70%) — the piece silhouette.
 - **Masked mean value** (30%) — separates white and black pieces with the same silhouette. The value is the minimum RGB channel, which is not fooled by red/yellow/green UI overlays.
-- **Red suppression** before masking neutralises the red check glow; the checked king's square is also treated as authoritative by the tracker, so a tinted king can never stall the game.
+- **Red suppression** before masking neutralises the red check glow; the checked king's square is also treated as authoritative by the tracker.
 
-Templates come from one of:
+Templates come from `templates/`, the bundled cburnett set, or auto-capture at the standard starting position.
 
-1. `templates/` (manual or auto calibration).
-2. The bundled cburnett set (`lichess_vision_bot/assets/cburnett`).
-3. Auto-capture at the standard starting position: the 8×8 occupancy pattern identifies the start, the brighter back rank identifies White, and the 12 piece types are captured from their known squares. This adapts to any piece set and theme.
+### Legal game tracking and move execution
 
-### 3. Legal game tracking
+The bot maintains a real `chess.Board` from the initial position or the supplied FEN. On every stable frame it compares the observed placement to the tracked board. The opponent's move is the unique legal move whose resulting placement matches. Castling, en passant, and promotions are handled without OCR. A placement that is not reachable by any legal move is treated as a vision error. Takebacks are detected by rewinding through the move history.
 
-A board image contains the piece placement but not the side to move, castling rights, en passant, or move history. The bot therefore starts from the initial position (or a supplied FEN) and maintains a real `chess.Board`.
+Stockfish returns a UCI move. The bot maps the from/to squares through the board orientation and the inverse perspective transform, then drags with a curved path, random offsets, and short pauses. Promotion moves trigger the promotion picker. After the drag, the move is pushed onto the tracker and the bot waits for the visual board to match. If it does not, the move is retried.
 
-On every stable frame it compares the observed placement to the tracked board. The opponent's move is the unique legal move whose resulting placement matches. This handles castling, en passant, and promotions without OCR. A placement that is not reachable by any legal move is treated as a vision error; the bot waits instead of guessing. Takebacks are detected by rewinding through the move history.
-
-### 4. Move execution and confirmation
-
-Stockfish returns a UCI move. The bot maps the from/to squares through the board orientation and the inverse perspective transform, then drags with a curved path, random offsets, and short pauses. Promotion moves trigger an optional dialog picker that scans the four promotion-choice cells and clicks the requested piece.
-
-After the drag, the move is pushed onto the tracker and the bot waits for the visual board to match the expected placement. If it does not, the move is retried up to `max_move_retries` times. If the opponent premoves, the reply is recognized immediately and applied.
-
-## Diagnostics
+### Vision diagnostics
 
 ```powershell
 # inspect a live screen
@@ -278,48 +250,44 @@ After the drag, the move is pushed onto the tracker and the bot waits for the vi
 # calibrate from a saved screenshot
 .\.venv\Scripts\python.exe run.py --calibrate --image debug\start.png
 
-# dry-run the whole bot on a saved screenshot (start position, no FEN needed)
+# dry-run on a saved screenshot
 .\.venv\Scripts\python.exe run.py --image debug\start.png --once
-
-# dry-run a mid-game screenshot
-.\.venv\Scripts\python.exe run.py --image debug\mid.png ^
-  --fen "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3" ^
-  --color white --once
 
 # engine sanity check
 .\.venv\Scripts\python.exe run.py --check-engine
 ```
 
-Debug output:
-
-- `logs/bot.log` — moves, confirmations, warnings.
-- `debug/*.png` — annotated frames (green board quad, per-square piece and score).
-- `templates/` — captured piece templates.
-
-## Troubleshooting
+### Vision troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| `board not found` | Use `--check-vision`; the board may be covered or off-screen. Set `--rect x,y,w,h`. |
-| Board detected at the wrong place | Set `vision.board_rect`. Coordinates are physical pixels; check the green quad in the debug image. |
-| Half-screen / panel next to Lichess | Keep the panel in its own window; the bot excludes it via `vision.ignore_window_title` (default `Lichess Bot`) so its own board preview is not mistaken for the game. |
-| Correct board, low confidence | Run `--calibrate` on the start position; check that the piece set/theme is visible and unobstructed. |
-| Wrong side / bot never moves | Set `--color white` or `--color black`. If the board is manually flipped, also set `--orientation`. |
-| Moves do not register | Focus the browser (`input.focus_window` or click it once before starting). Check the annotated board; try `input.mode: "click"`; raise `post_move_wait_s`. |
-| Promotion fails | Enable Lichess **Always promote to queen** and use `promotion_mode: "auto_queen"`, or keep `auto` and check the debug frame. |
-| Losing on time | Lower `engine.move_time_s`; the bot does not read clocks. |
-| Window moved mid-game | Press `F7` to re-detect and resync. |
+| `board not found` | Use `--check-vision`; the board may be covered or off-screen. Set `vision.board_rect`. |
+| Board detected at the wrong place | Set `vision.board_rect`; check the green quad in the debug image. |
+| Correct board, low confidence | Run `--calibrate` on the start position. |
+| Wrong side / bot never moves | Set `--color white` or `--color black`; set `--orientation` if the board is flipped. |
+| Moves do not register | Focus the browser; try `input.mode: "click"`; raise `post_move_wait_s`. |
+| Promotion fails | Enable Lichess **Always promote to queen** and use `promotion_mode: "auto_queen"`. |
 | Bot stalls after a misread | Press `F7`; if that fails, restart with the current FEN. |
+
+## Troubleshooting (DOM mode)
+
+| Symptom | Fix |
+|---|---|
+| Panel says «Ожидание позиции из расширения» | Load/reload the extension; open the Lichess game tab. |
+| Extension is gone after a Firefox restart | The Firefox add-on is temporary: load `browser_extension/firefox/manifest.json` again. |
+| `DOM feed is stale` | The Lichess tab must stay open. Reload the extensions and the tab. |
+| Bot plays the wrong side | The side is taken from the bottom clock/board; use the FEN/current-position form to override. |
+| Move time does not change | Pick a value in the panel's move-time selector; it is applied live. |
 
 ## Limits
 
 - Standard chess is the target. Chess960 works with `--fen` and a calibrated template library.
-- The board must be visible and unobstructed. Analysis arrows, drawing tools, or overlapping windows break the read.
-- Rapid and classical are comfortable. Blitz is possible with reduced timings. Bullet/ultrabullet is not practical because of screen sampling and engine latency.
+- The DOM mode needs the Lichess tab and the extension, but the board can be covered.
+- The vision fallback needs the board visible and unobstructed; analysis arrows, drawing tools, or overlapping windows break the read.
+- Rapid and classical are comfortable. Blitz is possible with reduced timings; bullet is not practical.
 - The bot does not read clocks; it uses a fixed budget per move.
-- Draw offers, takebacks, rematch buttons, and result dialogs are not clicked. The bot keeps playing moves; use the Lichess UI for those.
+- Draw offers, takebacks, rematch buttons, and result dialogs are not clicked.
 - The machine is under mouse control while the bot runs.
-- The browser must stay on the same monitor and position; `F7` recovers after a move.
 
 ## Project layout
 
@@ -332,16 +300,17 @@ lunar-lichess-bot/
 ├── requirements-dev.txt
 ├── start_bot.bat                  double-click / Task Scheduler launcher
 ├── stockfish.exe                  Stockfish 17.1
-├── browser_extension/             Chrome/Edge panel for lichess.org
+├── browser_extension/             Chromium extension + LUNAR widget
 │   ├── manifest.json
 │   ├── background.js              localhost API client
-│   ├── content.js                 injects the floating LUNAR widget
+│   ├── content.js                 DOM parser + floating widget
 │   ├── content.css
 │   ├── options.html / options.js  panel port
-│   └── icons/
+│   ├── icons/
+│   └── firefox/                   Firefox build
 ├── lichess_vision_bot/
 │   ├── bot.py                     main state machine
-│   ├── vision.py                  frame -> placement
+│   ├── vision.py                  screen -> placement (fallback)
 │   ├── pieces.py                  signatures, templates, classifier
 │   ├── board_detect.py            board location + perspective mapping
 │   ├── capture.py                 mss / static-image capture
@@ -360,7 +329,7 @@ lunar-lichess-bot/
 ├── logs/                          bot.log (generated)
 ├── debug/                         annotated frames (generated)
 ├── tools/generate_cburnett.py     regenerate bundled templates
-└── tests/                         vision, tracker, web and config tests
+└── tests/                         vision, DOM, tracker, web and config tests
 ```
 
 ## Development
@@ -370,7 +339,7 @@ lunar-lichess-bot/
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-The vision tests render synthetic boards from the bundled piece assets and do not need a screen or Stockfish. The engine check is separate:
+The tests render synthetic boards from the bundled piece assets and do not need a screen or Stockfish. The engine check is separate:
 
 ```powershell
 .\.venv\Scripts\python.exe run.py --check-engine
